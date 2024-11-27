@@ -31,7 +31,7 @@ export const Overview = () => {
           chatbot template built with Next.js and the AI SDK by Vercel. It uses
           the{' '}
           <code className="rounded-md bg-muted px-1 py-0.5">streamText</code>{' '}
-          function in the server and the{' '}
+          function in the TEST and the{' '}
           <code className="rounded-md bg-muted px-1 py-0.5">useChat</code> hook
           on the client to create a seamless chat experience.
         </p>

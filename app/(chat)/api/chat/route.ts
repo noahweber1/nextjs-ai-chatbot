@@ -26,6 +26,7 @@ import {
   getMostRecentUserMessage,
   sanitizeResponseMessages,
 } from '@/lib/utils';
+import { type StoreKey } from '@/app/(chat)/store-types';
 
 import { generateTitleFromUserMessage } from '../../actions';
 
@@ -47,17 +48,24 @@ const weatherTools: AllowedTools[] = ['getWeather'];
 
 const allTools: AllowedTools[] = [...blocksTools, ...weatherTools];
 
+interface ChatRequestBody {
+  id: string;
+  messages: Array<Message>;
+  modelId: string;
+  storeContext?: string;
+}
+
 export async function POST(request: Request) {
   const {
     id,
     messages,
     modelId,
-  }: { id: string; messages: Array<Message>; modelId: string } =
-    await request.json();
+    storeContext,
+  }: ChatRequestBody = await request.json();
 
   const session = await auth();
 
-  if (!session || !session.user || !session.user.id) {
+  if (!session?.user?.id) {
     return new Response('Unauthorized', { status: 401 });
   }
 
@@ -74,6 +82,11 @@ export async function POST(request: Request) {
     return new Response('No user message found', { status: 400 });
   }
 
+  // Combine system prompt with store context if available
+  const enhancedSystemPrompt = storeContext 
+    ? `${systemPrompt}\n\n${storeContext}`
+    : systemPrompt;
+
   const chat = await getChatById({ id });
 
   if (!chat) {
@@ -83,7 +96,12 @@ export async function POST(request: Request) {
 
   await saveMessages({
     messages: [
-      { ...userMessage, id: generateUUID(), createdAt: new Date(), chatId: id },
+      { 
+        ...userMessage, 
+        id: generateUUID(), 
+        createdAt: new Date(), 
+        chatId: id 
+      },
     ],
   });
 
@@ -91,7 +109,7 @@ export async function POST(request: Request) {
 
   const result = await streamText({
     model: customModel(model.apiIdentifier),
-    system: systemPrompt,
+    system: enhancedSystemPrompt,
     messages: coreMessages,
     maxSteps: 5,
     experimental_activeTools: allTools,
@@ -329,35 +347,28 @@ export async function POST(request: Request) {
     onFinish: async ({ responseMessages }) => {
       if (session.user?.id) {
         try {
-          const responseMessagesWithoutIncompleteToolCalls =
-            sanitizeResponseMessages(responseMessages);
-
+          const sanitizedMessages = sanitizeResponseMessages(responseMessages);
           await saveMessages({
-            messages: responseMessagesWithoutIncompleteToolCalls.map(
-              (message) => {
-                const messageId = generateUUID();
-
-                if (message.role === 'assistant') {
-                  streamingData.appendMessageAnnotation({
-                    messageIdFromServer: messageId,
-                  });
-                }
-
-                return {
-                  id: messageId,
-                  chatId: id,
-                  role: message.role,
-                  content: message.content,
-                  createdAt: new Date(),
-                };
-              },
-            ),
+            messages: sanitizedMessages.map((message) => {
+              const messageId = generateUUID();
+              if (message.role === 'assistant') {
+                streamingData.appendMessageAnnotation({
+                  messageIdFromServer: messageId,
+                });
+              }
+              return {
+                id: messageId,
+                chatId: id,
+                role: message.role,
+                content: message.content,
+                createdAt: new Date(),
+              };
+            }),
           });
         } catch (error) {
-          console.error('Failed to save chat');
+          console.error('Failed to save chat:', error);
         }
       }
-
       streamingData.close();
     },
     experimental_telemetry: {
@@ -381,7 +392,7 @@ export async function DELETE(request: Request) {
 
   const session = await auth();
 
-  if (!session || !session.user) {
+  if (!session?.user) {
     return new Response('Unauthorized', { status: 401 });
   }
 
