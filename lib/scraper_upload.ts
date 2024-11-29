@@ -1,3 +1,5 @@
+// node --loader ts-node/esm /workspaces/nextjs-ai-chatbot/lib/scraper_upload.ts
+// Import necessary modules
 import { config } from 'dotenv';
 import { put } from '@vercel/blob';
 import fs from 'fs/promises';
@@ -17,6 +19,7 @@ async function uploadToBlob(filePath: string, blobName: string): Promise<string>
     console.log(`Uploading file "${blobName}" to Vercel Blob...`);
     const { url } = await put(blobName, fileContent, {
       access: 'public', // Make the file publicly accessible
+      contentType: 'application/json', // Explicitly set the content type for JSON files
     });
 
     console.log(`File uploaded successfully!`);
@@ -30,8 +33,8 @@ async function uploadToBlob(filePath: string, blobName: string): Promise<string>
 
 // Main execution function
 (async function main() {
-  const filePath = '/workspaces/nextjs-ai-chatbot/scrape-results/scrape-1732626044.json'; // Path to the file to upload
-  const blobName = '/workspaces/nextjs-ai-chatbot/scrape-results/scrape-1732626044.json'; // Name to use in Blob storage
+  const filePath = '/workspaces/nextjs-ai-chatbot/scrape-results/wingman-store.com_collections_headphones.json'; // Path to the file to upload
+  const blobName = 'www.wingman.com.json'; // Desired name in Blob storage
 
   try {
     const blobUrl = await uploadToBlob(filePath, blobName);

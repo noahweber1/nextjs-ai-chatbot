@@ -8,11 +8,30 @@ import { customModel } from '@/lib/ai';
 import { models } from '@/lib/ai/models';
 import { type StoreKey, STORES } from './store-types';
 
-// Define base URL for blob storage
-const BLOB_BASE_URL = process.env.BLOB_BASE_URL || 'https://your-blob-storage-url.com';
+// Environment variables with type safety
+const BLOB_BASE_URL = process.env.BLOB_BASE_URL;
+const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
+
+// Type definitions
+interface CacheEntry {
+  data: string;
+  timestamp: number;
+}
+
+interface ScrapedContent {
+  content: string;
+  metadata: {
+    url: string;
+    timestamp: string;
+    pageCount: number;
+  };
+}
+
+// Cache implementation
+const contextCache = new Map<StoreKey, CacheEntry>();
 
 // Model actions
-export async function saveModelId(model: string) {
+export async function saveModelId(model: string): Promise<void> {
   if (!models.find(m => m.id === model)) {
     throw new Error('Invalid model');
   }
@@ -21,7 +40,7 @@ export async function saveModelId(model: string) {
 }
 
 // Store selection actions
-export async function setSelectedStore(store: StoreKey | null) {
+export async function setSelectedStore(store: StoreKey | null): Promise<void> {
   const cookieStore = await cookies();
   if (store) {
     cookieStore.set('selected-store', store);
@@ -37,31 +56,90 @@ export async function getSelectedStore(): Promise<StoreKey | null> {
   return store || null;
 }
 
-// Store context actions with direct URL access
-export async function getStoreContext(store: StoreKey | null) {
+export async function getStoreContext(store: StoreKey | null): Promise<string> {
   if (!store) return '';
+  if (!BLOB_BASE_URL) {
+    console.warn('BLOB_BASE_URL environment variable is not configured');
+    return '';
+  }
   
   try {
-    const blobUrl = `${BLOB_BASE_URL}/store-contexts/${store.toLowerCase().replace(' ', '-')}.json`;
+    // First validate that the store exists in STORES
+    if (!(store in STORES)) {
+      console.warn(`Invalid store key: ${store}`);
+      return '';
+    }
+
+    const storeConfig = STORES[store];
     
-    const response = await fetch(blobUrl);
+    // Debug log
+    console.log('Processing store:', store);
+    console.log('Store config:', storeConfig);
+
+    // Construct the blob URL using the explicit file path
+    const blobUrl = new URL(
+      storeConfig.contextFile,
+      BLOB_BASE_URL
+    );
+    
+    console.log('Fetching context from:', blobUrl.toString());
+    
+    const response = await fetch(blobUrl.toString(), {
+      next: { 
+        revalidate: 3600,
+        tags: [`store-${store}`],
+      },
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
     if (!response.ok) {
-      throw new Error(`Failed to fetch context: ${response.statusText}`);
+      if (response.status === 404) {
+        console.warn(`No context found for store: ${store} at ${blobUrl}`);
+        return '';
+      }
+      throw new Error(`Failed to fetch context: ${response.status} ${response.statusText}`);
     }
     
-    const contextData = await response.json();
-    return await formatContextData(contextData, store);
+    const data = await response.json();
+    return await formatScrapedContent(data, store);
   } catch (error) {
-    console.error('Error loading store context:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error loading store context:', errorMessage);
+    console.error('Store:', store);
+    console.error('STORES:', STORES);
     return '';
   }
 }
 
-// Upload context to blob storage
-export async function uploadStoreContext(store: StoreKey, contextData: any) {
+export async function uploadStoreContext(
+  store: StoreKey, 
+  contextData: string
+): Promise<string> {
+  if (!store || !contextData) {
+    throw new Error('Store and context data are required');
+  }
+
   try {
-    const blobPath = `store-contexts/${store.toLowerCase().replace(' ', '-')}.json`;
-    const blob = new Blob([JSON.stringify(contextData, null, 2)], {
+    // Validate store exists
+    if (!(store in STORES)) {
+      throw new Error(`Invalid store key: ${store}`);
+    }
+
+    const storeConfig = STORES[store];
+    const blobPath = storeConfig.contextFile;
+    
+    const content: ScrapedContent = {
+      content: contextData,
+      metadata: {
+        url: storeConfig.url,
+        timestamp: new Date().toISOString(),
+        pageCount: 1
+      }
+    };
+
+    const blob = new Blob([JSON.stringify(content, null, 2)], {
       type: 'application/json',
     });
 
@@ -70,36 +148,45 @@ export async function uploadStoreContext(store: StoreKey, contextData: any) {
       addRandomSuffix: false,
     });
 
+    contextCache.delete(store);
+    revalidatePath('/');
+    
     return url;
   } catch (error) {
-    console.error('Error uploading store context:', error);
-    throw error;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error uploading store context:', errorMessage);
+    console.error('Store:', store);
+    console.error('STORES:', STORES);
+    throw new Error(`Failed to upload store context: ${errorMessage}`);
   }
 }
 
-// Title generation action
 export async function generateTitleFromUserMessage({
   message,
 }: {
   message: CoreUserMessage;
-}) {
-  const { text: title } = await generateText({
-    model: customModel('gpt-4'),
-    system: `
-      - Generate a short title based on the first message a user begins a conversation with
-      - Ensure it is not more than 80 characters long
-      - The title should be a summary of the user's message
-      - Do not use quotes or colons
-    `,
-    prompt: JSON.stringify(message),
-  });
+}): Promise<string> {
+  try {
+    const { text: title } = await generateText({
+      model: customModel('gpt-4'),
+      system: `
+        Generate a short title based on the first message a user begins a conversation with.
+        Requirements:
+        - Maximum 80 characters
+        - Concise summary of user's message
+        - No quotes or colons
+        - Use active voice
+        - Be descriptive but brief
+      `,
+      prompt: JSON.stringify(message),
+    });
 
-  return title;
+    return title.trim();
+  } catch (error) {
+    console.error('Error generating title:', error);
+    return 'New Conversation';
+  }
 }
-
-// Cache implementation
-const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
-const contextCache = new Map<StoreKey, { data: string; timestamp: number }>();
 
 export async function getStoreContextWithCache(store: StoreKey): Promise<string> {
   const now = Date.now();
@@ -114,52 +201,48 @@ export async function getStoreContextWithCache(store: StoreKey): Promise<string>
   return context;
 }
 
-// Helper function to format context data
-async function formatContextData(data: any, store: StoreKey): Promise<string> {
-  if (!data) return '';
-  
-  try {
-    const {
-      title,
-      description,
-      products,
-      categories,
-      ...otherData
-    } = data;
-
-    return `
-      Store Context for ${store}:
-      Website: ${STORES[store]}
-      
-      ${title ? `Store Name: ${title}\n` : ''}
-      ${description ? `Description: ${description}\n` : ''}
-      ${products ? `Products: ${JSON.stringify(products, null, 2)}\n` : ''}
-      ${categories ? `Categories: ${JSON.stringify(categories, null, 2)}\n` : ''}
-      ${Object.entries(otherData)
-        .map(([key, value]) => `${key}: ${JSON.stringify(value, null, 2)}`)
-        .join('\n')}
-      
-      Instructions:
-      - Use this context to provide accurate information about the store's products and services
-      - Only reference information that is present in this context
-      - If information is not available in the context, acknowledge that
-    `.trim();
-  } catch (error) {
-    console.error('Error formatting context data:', error);
-    return JSON.stringify(data, null, 2);
-  }
-}
-
-// Utility function to get all available stores
-export async function getAvailableStores() {
-  return Object.entries(STORES).map(([name, domain]) => ({
+export async function getAvailableStores(): Promise<Array<{
+  name: StoreKey;
+  domain: string;
+  lastUpdated: string;
+}>> {
+  return Object.entries(STORES).map(([name, config]) => ({
     name: name as StoreKey,
-    domain,
+    domain: config.url,
     lastUpdated: new Date().toISOString(),
   }));
 }
 
-// Validation helper - now async
-export async function isValidStore(store: string): Promise<store is StoreKey> {
+export async function validateStore(store: string): Promise<boolean> {
   return store in STORES;
+}
+
+// Helper function to format the scraped content
+async function formatScrapedContent(
+  data: any, 
+  store: StoreKey
+): Promise<string> {
+  if (!data?.content) return '';
+  
+  try {
+    const formattedContext = [
+      `Store Context for ${store}:`,
+      `Website: ${STORES[store].url}`,
+      `Last Updated: ${data.metadata?.timestamp || 'Unknown'}`,
+      '',
+      'Content:',
+      data.content,
+      '',
+      'Instructions:',
+      '- Use this context to provide accurate information about the store\'s products and services',
+      '- Only reference information that is present in this context',
+      '- If information is not available in the context, acknowledge that',
+      data.metadata?.pageCount ? `- Content was scraped from ${data.metadata.pageCount} pages` : ''
+    ].filter(Boolean).join('\n');
+
+    return formattedContext.trim();
+  } catch (error) {
+    console.error('Error formatting scraped content:', error);
+    return data.content || '';
+  }
 }

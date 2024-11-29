@@ -59,8 +59,9 @@ def save_results(result: ScraperResult):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    filename = f"scrape-{int(time.time())}.json"
-    filepath = os.path.join(output_dir, filename)
+    # Sanitize URL to create a valid filename
+    sanitized_filename = result.metadata["url"].replace("https://", "").replace("http://", "").replace("/", "_").replace(":", "_")
+    filepath = os.path.join(output_dir, f"{sanitized_filename}.json")
 
     with open(filepath, "w", encoding="utf-8") as file:
         json.dump({
@@ -74,7 +75,7 @@ def save_results(result: ScraperResult):
 def main():
     # URLs to scrape - Add your target URLs here
     urls_to_scrape = [
-        "https://www.bearmattress.com/products/elite-hybrid-mattress",
+        "https://wingman-store.com/collections/headphones",
         # Add more URLs as needed
     ]
 

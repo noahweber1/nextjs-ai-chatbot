@@ -9,15 +9,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { type StoreKey } from '@/app/(chat)/store-types';
+import { type StoreKey, STORES } from '@/app/(chat)/store-types';
 import { setSelectedStore } from '@/app/(chat)/actions';
-
-const stores: StoreKey[] = ['Bear Mattress', 'Wingman Store'];
 
 export function StoreSelector() {
   const router = useRouter();
+  const stores = Object.keys(STORES) as StoreKey[];
 
   const handleStoreChange = useCallback(async (store: StoreKey) => {
+    console.log('Store selected:', store);
     await setSelectedStore(store);
     router.refresh();
   }, [router]);

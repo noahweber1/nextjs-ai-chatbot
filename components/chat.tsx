@@ -3,21 +3,17 @@
 import type { Attachment, Message } from 'ai';
 import { useChat } from 'ai/react';
 import { AnimatePresence } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useWindowSize } from 'usehooks-ts';
 
-import { ChatHeader } from '@/components/chat-header';
 import { PreviewMessage, ThinkingMessage } from '@/components/message';
 import { useScrollToBottom } from '@/components/use-scroll-to-bottom';
 import type { Vote } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
-import { 
-  type StoreKey 
-} from '@/app/(chat)/store-types';
+import { type StoreKey } from '@/app/(chat)/store-types';
 import {
   getSelectedStore,
-  getStoreContext,
   getStoreContextWithCache
 } from '@/app/(chat)/actions';
 import { Block, type UIBlock } from './block';
@@ -36,6 +32,7 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
   const { mutate } = useSWRConfig();
   const [storeContext, setStoreContext] = useState<string>('');
   const [selectedStore, setSelectedStore] = useState<StoreKey | null>(null);
+  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
 
   // Fetch initial store selection and context
   useEffect(() => {
@@ -55,10 +52,9 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
   const {
     messages,
     setMessages,
-    handleSubmit,
     input,
     setInput,
-    append,
+    handleSubmit,
     isLoading,
     stop,
     data: streamingData,
@@ -99,7 +95,17 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
 
-  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
+  const handleInputChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+  }, [setInput]);
+
+  const handleFileUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Handle file upload logic here
+      console.log('File uploaded:', file);
+    }
+  }, []);
 
   // Custom header component with store selector
   const Header = () => (
@@ -159,21 +165,16 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
           />
         </div>
 
-        <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
-          <MultimodalInput
-            chatId={id}
-            input={input}
-            setInput={setInput}
-            handleSubmit={handleSubmit}
-            isLoading={isLoading}
-            stop={stop}
-            attachments={attachments}
-            setAttachments={setAttachments}
-            messages={messages}
-            setMessages={setMessages}
-            append={append}
-          />
-        </form>
+        <MultimodalInput
+          input={input}
+          handleInputChange={handleInputChange}
+          handleSubmit={handleSubmit}
+          isLoading={isLoading}
+          messages={messages}
+          attachments={attachments}
+          handleFileUpload={handleFileUpload}
+          setInput={setInput}
+        />
       </div>
 
       <AnimatePresence>
