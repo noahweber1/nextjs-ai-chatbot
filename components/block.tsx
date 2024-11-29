@@ -1,3 +1,5 @@
+'use client';
+
 import type {
   Attachment,
   ChatRequestOptions,
@@ -24,7 +26,6 @@ import {
 
 import type { Document, Suggestion, Vote } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
-
 import { DiffView } from './diffview';
 import { DocumentSkeleton } from './document-skeleton';
 import { Editor } from './editor';
@@ -36,6 +37,7 @@ import { Button } from './ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { useScrollToBottom } from './use-scroll-to-bottom';
 import { VersionFooter } from './version-footer';
+
 export interface UIBlock {
   title: string;
   documentId: string;
@@ -54,19 +56,24 @@ interface BlockProps {
   chatId: string;
   input: string;
   setInput: Dispatch<SetStateAction<string>>;
-  handleSubmit: (event?: { preventDefault?: () => void }, options?: ChatRequestOptions) => void;
+  handleSubmit: (
+    event?: { preventDefault?: () => void },
+    chatRequestOptions?: ChatRequestOptions,
+  ) => void;
   isLoading: boolean;
   stop: () => void;
   attachments: Attachment[];
   setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  append: (message: Message | CreateMessage, options?: ChatRequestOptions) => Promise<void>;
+  append: (
+    message: Message | CreateMessage,
+    options?: ChatRequestOptions,
+  ) => Promise<string | null | undefined>;
   block: UIBlock;
   setBlock: Dispatch<SetStateAction<UIBlock>>;
   messages: Message[];
   setMessages: Dispatch<SetStateAction<Message[]>>;
   votes?: Vote[];
 }
-
 
 export function Block({
   chatId,
@@ -83,32 +90,13 @@ export function Block({
   messages,
   setMessages,
   votes,
-}: {
-  chatId: string;
-  input: string;
-  setInput: (input: string) => void;
-  isLoading: boolean;
-  stop: () => void;
-  attachments: Array<Attachment>;
-  setAttachments: Dispatch<SetStateAction<Array<Attachment>>>;
-  block: UIBlock;
-  setBlock: Dispatch<SetStateAction<UIBlock>>;
-  messages: Array<Message>;
-  setMessages: Dispatch<SetStateAction<Array<Message>>>;
-  votes: Array<Vote> | undefined;
-  append: (
-    message: Message | CreateMessage,
-    chatRequestOptions?: ChatRequestOptions,
-  ) => Promise<string | null | undefined>;
-  handleSubmit: (
-    event?: {
-      preventDefault?: () => void;
-    },
-    chatRequestOptions?: ChatRequestOptions,
-  ) => void;
-}) {
+}: BlockProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
+  const { width: windowWidth, height: windowHeight } = useWindowSize();
+  const isMobile = windowWidth ? windowWidth < 768 : false;
+  const [_, copyToClipboard] = useCopyToClipboard();
+  const [isToolbarVisible, setIsToolbarVisible] = useState(false);
 
   const {
     data: documents,
@@ -249,111 +237,18 @@ export function Block({
     }
   };
 
-  const [isToolbarVisible, setIsToolbarVisible] = useState(false);
-
-  /*
-   * NOTE: if there are no documents, or if
-   * the documents are being fetched, then
-   * we mark it as the current version.
-   */
-
   const isCurrentVersion =
     documents && documents.length > 0
       ? currentVersionIndex === documents.length - 1
       : true;
 
-  const { width: windowWidth, height: windowHeight } = useWindowSize();
-  const isMobile = windowWidth ? windowWidth < 768 : false;
-
-  const [_, copyToClipboard] = useCopyToClipboard();
-
   return (
     <motion.div
-      className="flex flex-row h-dvh w-dvw fixed top-0 left-0 z-50 bg-muted"
-      initial={{ opacity: 1 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+      initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: { delay: 0.4 } }}
+      exit={{ opacity: 0 }}
     >
-      {!isMobile && (
-        <motion.div
-          className="relative w-[400px] bg-muted dark:bg-background h-dvh shrink-0"
-          initial={{ opacity: 0, x: 10, scale: 1 }}
-          animate={{
-            opacity: 1,
-            x: 0,
-            scale: 1,
-            transition: {
-              delay: 0.2,
-              type: 'spring',
-              stiffness: 200,
-              damping: 30,
-            },
-          }}
-          exit={{
-            opacity: 0,
-            x: 0,
-            scale: 0.95,
-            transition: { delay: 0 },
-          }}
-        >
-          <AnimatePresence>
-            {!isCurrentVersion && (
-              <motion.div
-                className="left-0 absolute h-dvh w-[400px] top-0 bg-zinc-900/50 z-50"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              />
-            )}
-          </AnimatePresence>
-
-          <div className="flex flex-col h-full justify-between items-center gap-4">
-            <div
-              ref={messagesContainerRef}
-              className="flex flex-col gap-4 h-full items-center overflow-y-scroll px-4 pt-20"
-            >
-              {messages.map((message, index) => (
-                <PreviewMessage
-                  chatId={chatId}
-                  key={message.id}
-                  message={message}
-                  block={block}
-                  setBlock={setBlock}
-                  isLoading={isLoading && index === messages.length - 1}
-                  vote={
-                    votes
-                      ? votes.find((vote) => vote.messageId === message.id)
-                      : undefined
-                  }
-                />
-              ))}
-
-              <div
-                ref={messagesEndRef}
-                className="shrink-0 min-w-[24px] min-h-[24px]"
-              />
-            </div>
-
-            <form className="flex flex-row gap-2 relative items-end w-full px-4 pb-4">
-              <MultimodalInput
-                chatId={chatId}
-                input={input}
-                setInput={setInput}
-                handleSubmit={handleSubmit}
-                isLoading={isLoading}
-                stop={stop}
-                attachments={attachments}
-                setAttachments={setAttachments}
-                messages={messages}
-                append={append}
-                className="bg-background dark:bg-muted"
-                setMessages={setMessages}
-              />
-            </form>
-          </div>
-        </motion.div>
-      )}
-
       <motion.div
         className="fixed dark:bg-muted bg-background h-dvh flex flex-col shadow-xl overflow-y-scroll"
         initial={

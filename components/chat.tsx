@@ -1,6 +1,6 @@
 'use client';
 
-import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai';
+import type { Message, CreateMessage, ChatRequestOptions, Attachment } from 'ai';
 import { useChat } from 'ai/react';
 import { AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
@@ -22,6 +22,13 @@ import { MultimodalInput } from './multimodal-input';
 import { Overview } from './overview';
 import { StoreSelector } from './store-selector';
 
+// Define ExtendedAttachment type
+interface ExtendedAttachment extends Required<Attachment> {
+  url: string;
+  name: string;
+  contentType: string;
+}
+
 interface ChatProps {
   id: string;
   initialMessages: Array<Message>;
@@ -32,9 +39,34 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
   const { mutate } = useSWRConfig();
   const [storeContext, setStoreContext] = useState<string>('');
   const [selectedStore, setSelectedStore] = useState<StoreKey | null>(null);
-  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
+  const [attachments, setAttachments] = useState<Array<ExtendedAttachment>>([]);
 
-  // Fetch initial store selection and context
+  // Helper function to convert Attachment to ExtendedAttachment
+  const asExtendedAttachment = (attachment: Attachment): ExtendedAttachment => ({
+    ...attachment,
+    url: attachment.url || '',
+    name: attachment.name || '',
+    contentType: attachment.contentType || '',
+    id: attachment.id || crypto.randomUUID(),
+    role: attachment.role || 'user',
+  });
+
+  // Create a type-safe wrapper for setAttachments
+  const handleSetAttachments = useCallback((
+    action: SetStateAction<ExtendedAttachment[]> | SetStateAction<Attachment[]>
+  ) => {
+    if (typeof action === 'function') {
+      setAttachments(prevAttachments => {
+        const result = action(prevAttachments as any);
+        return Array.isArray(result) 
+          ? result.map(asExtendedAttachment)
+          : result;
+      });
+    } else {
+      setAttachments(action.map(asExtendedAttachment));
+    }
+  }, []);
+
   useEffect(() => {
     async function initializeStore() {
       const store = await getSelectedStore();
@@ -96,19 +128,6 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
 
-  const handleInputChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-  }, [setInput]);
-
-  const handleFileUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Handle file upload logic here
-      console.log('File uploaded:', file);
-    }
-  }, []);
-
-  // Custom header component with store selector
   const Header = () => (
     <header className="sticky top-0 z-50 flex items-center justify-between w-full h-16 px-4 border-b shrink-0 bg-gradient-to-b from-background/10 via-background/50 to-background/80 backdrop-blur-xl">
       <div className="flex items-center gap-4">
@@ -167,14 +186,17 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
         </div>
 
         <MultimodalInput
+          chatId={id}
           input={input}
-          handleInputChange={handleInputChange}
+          setInput={setInput}
           handleSubmit={handleSubmit}
           isLoading={isLoading}
+          stop={stop}
           messages={messages}
+          setMessages={setMessages}
           attachments={attachments}
-          handleFileUpload={handleFileUpload}
-          setInput={setInput}
+          setAttachments={handleSetAttachments}
+          append={append}
         />
       </div>
 
@@ -188,7 +210,7 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
             isLoading={isLoading}
             stop={stop}
             attachments={attachments}
-            setAttachments={setAttachments}
+            setAttachments={handleSetAttachments}
             append={append}
             block={block}
             setBlock={setBlock}
