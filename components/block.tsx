@@ -50,6 +50,24 @@ export interface UIBlock {
   };
 }
 
+interface BlockProps {
+  chatId: string;
+  input: string;
+  setInput: Dispatch<SetStateAction<string>>;
+  handleSubmit: (event?: { preventDefault?: () => void }, options?: ChatRequestOptions) => void;
+  isLoading: boolean;
+  stop: () => void;
+  attachments: Attachment[];
+  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
+  append: (message: Message | CreateMessage, options?: ChatRequestOptions) => Promise<void>;
+  block: UIBlock;
+  setBlock: Dispatch<SetStateAction<UIBlock>>;
+  messages: Message[];
+  setMessages: Dispatch<SetStateAction<Message[]>>;
+  votes?: Vote[];
+}
+
+
 export function Block({
   chatId,
   input,

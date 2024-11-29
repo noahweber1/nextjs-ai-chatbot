@@ -43,7 +43,7 @@ const suggestedActions = [
 interface MultimodalInputProps {
   input: string;
   handleInputChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
-  handleSubmit: (options: ChatRequestOptions) => Promise<void>;
+  handleSubmit: (event?: { preventDefault?: () => void }, options?: ChatRequestOptions) => void;
   isLoading: boolean;
   messages: Message[];
   attachments: Attachment[];
@@ -95,7 +95,7 @@ export function MultimodalInput({
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (!input || isLoading) return;
-        handleSubmit({});
+        handleSubmit(undefined, {});
         setLastSubmittedMessage(input);
       }
     },
@@ -110,13 +110,6 @@ export function MultimodalInput({
       }
     },
     [setInput],
-  );
-
-  const handleLocalInputChange = useCallback(
-    (e: ChangeEvent<HTMLTextAreaElement>) => {
-      handleInputChange(e);
-    },
-    [handleInputChange],
   );
 
   return (
@@ -150,7 +143,7 @@ export function MultimodalInput({
               className="size-6"
               onClick={() => uploadRef.current?.click()}
             >
-              <PaperclipIcon className="size-4" />
+              <PaperclipIcon size={16} />
             </Button>
             <input
               ref={uploadRef}
@@ -166,7 +159,7 @@ export function MultimodalInput({
             tabIndex={0}
             rows={1}
             value={input}
-            onChange={handleLocalInputChange}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder="Send a message"
             spellCheck={false}
@@ -183,14 +176,14 @@ export function MultimodalInput({
               className="size-6"
               disabled={!input || isLoading}
               onClick={() => {
-                handleSubmit({});
+                handleSubmit(undefined, {});
                 setLastSubmittedMessage(input);
               }}
             >
               {isLoading ? (
-                <StopIcon className="size-4" />
+                <StopIcon size={16} />
               ) : (
-                <ArrowUpIcon className="size-4" />
+                <ArrowUpIcon size={16} />
               )}
             </Button>
           </div>

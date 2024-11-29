@@ -1,9 +1,9 @@
 'use client';
 
-import type { Attachment, Message } from 'ai';
+import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai';
 import { useChat } from 'ai/react';
 import { AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useCallback, type ChangeEvent } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useWindowSize } from 'usehooks-ts';
 
@@ -57,6 +57,7 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
     handleSubmit,
     isLoading,
     stop,
+    append,
     data: streamingData,
   } = useChat({
     body: {
