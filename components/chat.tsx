@@ -3,7 +3,7 @@
 import type { Message, CreateMessage, ChatRequestOptions, Attachment } from 'ai';
 import { useChat } from 'ai/react';
 import { AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useCallback, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useWindowSize } from 'usehooks-ts';
 
@@ -22,8 +22,7 @@ import { MultimodalInput } from './multimodal-input';
 import { Overview } from './overview';
 import { StoreSelector } from './store-selector';
 
-// Define ExtendedAttachment type
-interface ExtendedAttachment extends Required<Attachment> {
+interface ExtendedAttachment {
   url: string;
   name: string;
   contentType: string;
@@ -39,33 +38,39 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
   const { mutate } = useSWRConfig();
   const [storeContext, setStoreContext] = useState<string>('');
   const [selectedStore, setSelectedStore] = useState<StoreKey | null>(null);
-  const [attachments, setAttachments] = useState<Array<ExtendedAttachment>>([]);
+  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
 
-  // Helper function to convert Attachment to ExtendedAttachment
-  const asExtendedAttachment = (attachment: Attachment): ExtendedAttachment => ({
-    ...attachment,
+  const toExtendedAttachment = useCallback((attachment: Partial<Attachment>): ExtendedAttachment => ({
     url: attachment.url || '',
     name: attachment.name || '',
     contentType: attachment.contentType || '',
-    id: attachment.id || crypto.randomUUID(),
-    role: attachment.role || 'user',
-  });
+  }), []);
 
-  // Create a type-safe wrapper for setAttachments
+  const toBaseAttachment = useCallback((
+    attachment: ExtendedAttachment | Attachment,
+    _index?: number,
+    _array?: Attachment[]
+  ): Attachment => ({
+    url: attachment.url,
+    name: attachment.name,
+    contentType: attachment.contentType,
+  }), []);
+
   const handleSetAttachments = useCallback((
-    action: SetStateAction<ExtendedAttachment[]> | SetStateAction<Attachment[]>
+    action: SetStateAction<Attachment[]> | SetStateAction<ExtendedAttachment[]>
   ) => {
     if (typeof action === 'function') {
       setAttachments(prevAttachments => {
-        const result = action(prevAttachments as any);
+        const extendedPrev = prevAttachments.map(toExtendedAttachment);
+        const result = action(extendedPrev as any);
         return Array.isArray(result) 
-          ? result.map(asExtendedAttachment)
-          : result;
+          ? result.map(att => toBaseAttachment(att))
+          : prevAttachments;
       });
     } else {
-      setAttachments(action.map(asExtendedAttachment));
+      setAttachments(action.map(att => toBaseAttachment(att)));
     }
-  }, []);
+  }, [toBaseAttachment, toExtendedAttachment]);
 
   useEffect(() => {
     async function initializeStore() {
@@ -194,8 +199,8 @@ export function Chat({ id, initialMessages, selectedModelId }: ChatProps) {
           stop={stop}
           messages={messages}
           setMessages={setMessages}
-          attachments={attachments}
-          setAttachments={handleSetAttachments}
+          attachments={attachments.map(toExtendedAttachment)}
+          setAttachments={handleSetAttachments as Dispatch<SetStateAction<ExtendedAttachment[]>>}
           append={append}
         />
       </div>
